@@ -2,12 +2,16 @@
 const fs = require("fs");
 const path = require("path");
 
-function loadHandbookText() {
+/**
+ * Load handbook sections individually
+ * Each section keeps its filename + cleaned text
+ */
+function loadHandbookSections() {
   const handbookDir = path.join(process.cwd(), "handbook");
-  let text = "";
+  const sections = [];
 
   if (!fs.existsSync(handbookDir)) {
-    return "";
+    return sections;
   }
 
   const files = fs.readdirSync(handbookDir);
@@ -15,24 +19,30 @@ function loadHandbookText() {
   for (const file of files) {
     if (file.endsWith(".html")) {
       const filePath = path.join(handbookDir, file);
-      const content = fs.readFileSync(filePath, "utf8");
+      const raw = fs.readFileSync(filePath, "utf8");
 
-      // Strip HTML tags (simple + safe)
-      const cleaned = content
+      // Strip HTML safely
+      const cleaned = raw
         .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
         .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
         .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ");
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
 
-      text += "\n" + cleaned;
+      sections.push({
+        file,
+        sectionName: file.replace(".html", "").replace(/-/g, " "),
+        text: cleaned
+      });
     }
   }
 
-  return text.toLowerCase();
+  return sections;
 }
 
 module.exports = async function (context, req) {
-  const question = (req.query.q || "").toLowerCase();
+  const question = (req.query.q || "").trim().toLowerCase();
 
   if (!question) {
     context.res = {
@@ -45,13 +55,21 @@ module.exports = async function (context, req) {
     return;
   }
 
-  const handbookText = loadHandbookText();
+  const sections = loadHandbookSections();
+
+  let matchedSection = null;
+
+  for (const section of sections) {
+    if (section.text.includes(question)) {
+      matchedSection = section;
+      break;
+    }
+  }
 
   let answer;
 
-  if (handbookText.includes(question)) {
-    answer =
-      "This topic is addressed in the SymTec Employee Handbook. Please review the relevant section for full details.";
+  if (matchedSection) {
+    answer = `This topic is addressed in the SymTec Employee Handbook under the section "${matchedSection.sectionName}". Please review that section for full details.`;
   } else {
     answer =
       "This topic is not covered in the handbook. Please reach out to your team lead for guidance.";
